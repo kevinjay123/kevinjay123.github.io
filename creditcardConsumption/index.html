@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>信用卡消費分析</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .chart-container {
+            width: 600px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .total-amount {
+            text-align: center;
+            font-size: 24px;
+            font-weight: bold;
+            color: #e44d26;
+            margin: 20px 0;
+        }
+        .category-list {
+            margin-top: 30px;
+        }
+        .category-item {
+            background-color: white;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .category-item:hover {
+            background-color: #f0f0f0;
+        }
+        .details {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f9f9f9;
+        }
+        .detail-item {
+            padding: 5px 0;
+            border-bottom: 1px solid #eee;
+        }
+        .loading {
+            text-align: center;
+            font-size: 18px;
+            margin: 20px 0;
+        }
+        @media (max-width: 768px) {
+            .chart-container {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>信用卡消費分析</h1>
+            <select id="monthSelector" onchange="loadMonthData()">
+                <option value="202412">2024年12月</option>
+                <option value="202501">2025年1月</option>
+                <option value="202502" selected>2025年2月</option>
+            </select>
+        </div>
+
+        <div class="chart-container">
+            <canvas id="pieChart"></canvas>
+            <div class="total-amount" id="totalAmount">載入中...</div>
+        </div>
+
+        <div class="category-list" id="categoryList">
+            <div class="loading">正在載入資料...</div>
+        </div>
+    </div>
+
+    <script>
+        // 儲存全域變數
+        let myChart = null;
+        
+        // 頁面載入時執行
+        document.addEventListener('DOMContentLoaded', function() {
+            // 載入預設月份資料
+            loadMonthData();
+        });
+        
+        // 載入指定月份資料
+        function loadMonthData() {
+            const month = document.getElementById('monthSelector').value;
+            const categoryList = document.getElementById('categoryList');
+            categoryList.innerHTML = '<div class="loading">正在載入資料...</div>';
+            
+            // 載入對應月份的資料檔案
+            fetch(`data/${month}.js`)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('資料載入失敗');
+                    }
+                    return response.text();
+                })
+                .then(data => {
+                    // 執行載入的JavaScript
+                    const script = document.createElement('script');
+                    script.textContent = data;
+                    document.head.appendChild(script);
+                    
+                    // 資料載入後延遲一小段時間再渲染
+                    setTimeout(() => {
+                        renderData(window.consumptionData, month);
+                    }, 100);
+                })
+                .catch(error => {
+                    categoryList.innerHTML = `<div class="loading">錯誤: ${error.message}</div>`;
+                });
+        }
+        
+        // 渲染資料到頁面
+        function renderData(consumptionData, month) {
+            // 設定月份標題
+            const year = month.substring(0, 4);
+            const monthNum = month.substring(4);
+            document.querySelector('h1').textContent = `${year}年${parseInt(monthNum)}月 信用卡消費分析`;
+            
+            // 計算總金額
+            const totalAmount = Object.values(consumptionData).reduce((sum, category) => sum + category.total, 0);
+            document.getElementById('totalAmount').textContent = `本期應繳總金額：${totalAmount.toLocaleString()} 元`;
+            
+            // 渲染類別列表
+            const categoryList = document.getElementById('categoryList');
+            categoryList.innerHTML = '';
+            
+            Object.entries(consumptionData).forEach(([category, data]) => {
+                const categoryDiv = document.createElement('div');
+                categoryDiv.className = 'category-item';
+                categoryDiv.innerHTML = `
+                    <h3>${category}: ${data.total.toLocaleString()}元</h3>
+                    <div class="details">
+                        ${data.details.map(detail => `
+                            <div class="detail-item">${detail}</div>
+                        `).join('')}
+                    </div>
+                `;
+
+                categoryDiv.addEventListener('click', function() {
+                    const details = this.querySelector('.details');
+                    details.style.display = details.style.display === 'none' ? 'block' : 'none';
+                });
+
+                categoryList.appendChild(categoryDiv);
+            });
+            
+            // 繪製圓餅圖
+            const ctx = document.getElementById('pieChart').getContext('2d');
+            
+            // 如果已經有圖表則銷毀
+            if (myChart) {
+                myChart.destroy();
+            }
+            
+            myChart = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(consumptionData),
+                    datasets: [{
+                        data: Object.values(consumptionData).map(item => item.total),
+                        backgroundColor: [
+                            '#FF6384', '#36A2EB', '#FFCE56', '#4BC0C0', '#9966FF',
+                            '#FF9F40', '#FF99CC', '#99FF99', '#9999FF', '#FFFF99',
+                            '#FF9966', '#99FFFF', '#CC99FF', '#FF9999', '#99FFCC',
+                            '#FFCC99', '#CCFF99', '#99CCFF', '#FFCCCC', '#CCFFCC'
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true
+                }
+            });
+        }
+    </script>
+</body>
+</html>
